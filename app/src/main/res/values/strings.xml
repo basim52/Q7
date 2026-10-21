@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">LaserForge Studio</string>
+    <string name="app_subtitle">CNC &amp; Laser Fabrication Suite</string>
+    <string name="nav_optimizer">Vector Optimizer</string>
+    <string name="nav_box_gen">Box Generator</string>
+    <string name="nav_cost_calc">Cost Calculator</string>
+    <string name="credits_remaining_format">%1$d Credits</string>
+    <string name="export_svg_cost">1 Credit / Export</string>
+    <string name="btn_generate_vector">Generate Clean SVG Vector (1 Credit)</string>
+    <string name="btn_export_box_svg">Export Multi-Panel SVG Layout (1 Credit)</string>
+    <string name="btn_save_quote">Save Workshop Quote</string>
+    <string name="btn_top_up_credits">Top Up +10 Credits</string>
+    <string name="upload_zone_title">Drop or Pick Raster / SVG Artwork</string>
+    <string name="upload_zone_subtitle">Supports PNG, JPG, SVG • Optimized for LightBurn &amp; Silhouette</string>
+</resources>

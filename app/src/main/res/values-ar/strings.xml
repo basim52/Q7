@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">LaserForge Studio</string>
+    <string name="app_subtitle">منصة قص الليزر والـ CNC الاحترافية</string>
+    <string name="nav_optimizer">محسن الفيكتور</string>
+    <string name="nav_box_gen">مولد الصناديق</string>
+    <string name="nav_cost_calc">حاسبة التكلفة</string>
+    <string name="credits_remaining_format">%1$d رصيد متبقي</string>
+    <string name="export_svg_cost">1 رصيد / تصدير</string>
+    <string name="btn_generate_vector">توليد ملف فيكتور SVG (1 رصيد)</string>
+    <string name="btn_export_box_svg">تصدير مخطط الصندوق SVG (1 رصيد)</string>
+    <string name="btn_save_quote">حفظ عرض السعر</string>
+    <string name="btn_top_up_credits">شحن +10 رصيد</string>
+    <string name="upload_zone_title">اسحب أو اختر صورة أو ملف SVG</string>
+    <string name="upload_zone_subtitle">يدعم PNG و JPG و SVG • مهيأ لبرامج LightBurn و Silhouette</string>
+</resources>

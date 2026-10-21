@@ -1,0 +1,6 @@
+{
+  "name": "LaserForge Studio",
+  "description": "Precision Micro-SaaS fabrication toolkit for laser cutting workshops, CNC operators, and digital creators featuring Vector & Image Optimization, Interlocking Finger-Joint Box Generation, and Workshop Cost & Pricing Calculation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
