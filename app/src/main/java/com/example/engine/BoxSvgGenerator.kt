@@ -24,6 +24,13 @@ object BoxSvgGenerator {
         val kerf = config.kerfMm.coerceIn(0f, 0.5f)
 
         val spacing = 10f
+        when (config.enclosureStyle) {
+            EnclosureStyle.PHONE_STAND -> return summarize(buildPhoneStand(w, h, d, t, spacing), spacing, w, h, d, t, 0)
+            EnclosureStyle.PICTURE_FRAME -> return summarize(buildPictureFrame(w, h, t, spacing), spacing, w, h, t * 3, 0f, 0)
+            else -> Unit
+        }
+        val openTop = config.enclosureStyle == EnclosureStyle.OPEN_TOP_TRAY ||
+            config.enclosureStyle == EnclosureStyle.DRAWER
         val panels = mutableListOf<BoxPanelGeometry>()
         var totalTabs = 0
 
@@ -45,8 +52,8 @@ object BoxSvgGenerator {
             height = h,
             thickness = t,
             kerf = kerf,
-            topOut = config.enclosureStyle != EnclosureStyle.OPEN_TOP_TRAY,
-            topFlat = config.enclosureStyle == EnclosureStyle.OPEN_TOP_TRAY,
+            topOut = !openTop,
+            topFlat = openTop,
             bottomOut = true,
             leftOut = true,
             rightOut = true,
@@ -71,8 +78,8 @@ object BoxSvgGenerator {
             height = h,
             thickness = t,
             kerf = kerf,
-            topOut = config.enclosureStyle != EnclosureStyle.OPEN_TOP_TRAY,
-            topFlat = config.enclosureStyle == EnclosureStyle.OPEN_TOP_TRAY,
+            topOut = !openTop,
+            topFlat = openTop,
             bottomOut = true,
             leftOut = true,
             rightOut = true,
@@ -125,8 +132,8 @@ object BoxSvgGenerator {
             height = h,
             thickness = t,
             kerf = kerf,
-            topOut = config.enclosureStyle != EnclosureStyle.OPEN_TOP_TRAY,
-            topFlat = config.enclosureStyle == EnclosureStyle.OPEN_TOP_TRAY,
+            topOut = !openTop,
+            topFlat = openTop,
             bottomOut = true,
             leftOut = false,
             rightOut = false,
@@ -151,8 +158,8 @@ object BoxSvgGenerator {
             height = h,
             thickness = t,
             kerf = kerf,
-            topOut = config.enclosureStyle != EnclosureStyle.OPEN_TOP_TRAY,
-            topFlat = config.enclosureStyle == EnclosureStyle.OPEN_TOP_TRAY,
+            topOut = !openTop,
+            topFlat = openTop,
             bottomOut = true,
             leftOut = false,
             rightOut = false,
@@ -224,8 +231,36 @@ object BoxSvgGenerator {
                     outlinePointsMm = dividerPts
                 )
             )
+        } else if (config.enclosureStyle == EnclosureStyle.DRAWER) {
+            // Flat decorative drawer face, overhanging the drawer body by one thickness on each side
+            val faceW = w + 2 * t
+            val faceH = h + t
+            panels.add(
+                BoxPanelGeometry(
+                    id = "drawer_face",
+                    label = "DRAWER FACE",
+                    dimensionsLabel = "${faceW.toInt()}×${faceH.toInt()}mm",
+                    offsetXMm = spacing * 3 + d * 2,
+                    offsetYMm = row2Y,
+                    nominalWidthMm = faceW,
+                    nominalHeightMm = faceH,
+                    outlinePointsMm = rect(faceW, faceH)
+                )
+            )
         }
 
+        return summarize(panels, spacing, w, h, d, t, totalTabs)
+    }
+
+    private fun summarize(
+        panels: List<BoxPanelGeometry>,
+        spacing: Float,
+        w: Float,
+        h: Float,
+        d: Float,
+        t: Float,
+        totalTabs: Int
+    ): BoxLayoutSummary {
         // Calculate total sheet footprint & cut path length
         var maxX = 0f
         var maxY = 0f
@@ -234,6 +269,8 @@ object BoxSvgGenerator {
         for (panel in panels) {
             maxX = max(maxX, panel.offsetXMm + panel.nominalWidthMm + spacing)
             maxY = max(maxY, panel.offsetYMm + panel.nominalHeightMm + spacing)
+            maxX = max(maxX, panel.offsetXMm + (panel.outlinePointsMm.maxOfOrNull { it.first } ?: 0f) + spacing)
+            maxY = max(maxY, panel.offsetYMm + (panel.outlinePointsMm.maxOfOrNull { it.second } ?: 0f) + spacing)
             val pts = panel.outlinePointsMm
             for (i in 1 until pts.size) {
                 totalPerimeterMm += hypot(
@@ -256,6 +293,86 @@ object BoxSvgGenerator {
             totalTabsCount = totalTabs,
             internalVolumeCm3 = volumeCm3
         )
+    }
+
+    private fun rect(width: Float, height: Float): List<Pair<Float, Float>> =
+        listOf(0f to 0f, width to 0f, width to height, 0f to height, 0f to 0f)
+
+    /** Phone stand: two slanted side cheeks joined by a back rest and a front lip (slotted to the cheeks). */
+    private fun buildPhoneStand(w: Float, h: Float, d: Float, t: Float, spacing: Float): List<BoxPanelGeometry> {
+        val panels = mutableListOf<BoxPanelGeometry>()
+        val lipH = (h * 0.18f).coerceIn(10f, 25f)
+        // Side cheek profile (d wide, h tall): flat base, front lip notch, slanted back rest.
+        val side = listOf(
+            0f to h,
+            d to h,
+            d * 0.42f to 0f,
+            d * 0.42f - t * 2.5f to 0f,
+            d * 0.18f to h - lipH,
+            d * 0.18f to h - lipH - t,
+            d * 0.08f to h - lipH - t,
+            d * 0.08f to h - lipH,
+            0f to h - lipH,
+            0f to h
+        )
+        listOf("left", "right").forEachIndexed { i, id ->
+            panels.add(
+                BoxPanelGeometry(
+                    id = "stand_$id",
+                    label = if (i == 0) "LEFT CHEEK" else "RIGHT CHEEK",
+                    dimensionsLabel = "${d.toInt()}×${h.toInt()}mm",
+                    offsetXMm = spacing + i * (d + spacing),
+                    offsetYMm = spacing,
+                    nominalWidthMm = d,
+                    nominalHeightMm = h,
+                    outlinePointsMm = side
+                )
+            )
+        }
+        val restH = (h * 0.75f).coerceAtLeast(20f)
+        val row2 = spacing * 2 + h
+        panels.add(
+            BoxPanelGeometry(
+                id = "stand_back", label = "BACK REST",
+                dimensionsLabel = "${w.toInt()}×${restH.toInt()}mm",
+                offsetXMm = spacing, offsetYMm = row2,
+                nominalWidthMm = w, nominalHeightMm = restH,
+                outlinePointsMm = rect(w, restH)
+            )
+        )
+        panels.add(
+            BoxPanelGeometry(
+                id = "stand_lip", label = "FRONT LIP",
+                dimensionsLabel = "${w.toInt()}×${lipH.toInt()}mm",
+                offsetXMm = spacing * 2 + w, offsetYMm = row2,
+                nominalWidthMm = w, nominalHeightMm = lipH,
+                outlinePointsMm = rect(w, lipH)
+            )
+        )
+        return panels
+    }
+
+    /** Picture frame: four border strips, a back plate and a fold-out easel leg. */
+    private fun buildPictureFrame(w: Float, h: Float, t: Float, spacing: Float): List<BoxPanelGeometry> {
+        val border = (minOf(w, h) * 0.15f).coerceIn(12f, 40f)
+        val panels = mutableListOf<BoxPanelGeometry>()
+        fun add(id: String, label: String, pw: Float, ph: Float, x: Float, y: Float, pts: List<Pair<Float, Float>> = rect(pw, ph)) {
+            panels.add(BoxPanelGeometry(id, label, "${pw.toInt()}×${ph.toInt()}mm", x, y, pw, ph, pts))
+        }
+        // Mitred top/bottom strips (trapezoids) and left/right strips
+        val topPts = listOf(0f to 0f, w to 0f, w - border to border, border to border, 0f to 0f)
+        val sidePts = listOf(0f to 0f, border to border, border to h - border, 0f to h, 0f to 0f)
+        add("frame_top", "FRAME TOP", w, border, spacing, spacing, topPts)
+        add("frame_bottom", "FRAME BOTTOM", w, border, spacing, spacing * 2 + border, topPts)
+        add("frame_left", "FRAME LEFT", border, h, spacing * 2 + w, spacing, sidePts)
+        add("frame_right", "FRAME RIGHT", border, h, spacing * 3 + w + border, spacing, sidePts)
+        val row2 = spacing * 2 + h
+        add("frame_back", "BACK PLATE", w - t, h - t, spacing, row2)
+        val legW = (w * 0.25f).coerceAtLeast(20f)
+        val legH = h * 0.6f
+        val legPts = listOf(0f to 0f, legW to 0f, legW * 0.7f to legH, legW * 0.3f to legH, 0f to 0f)
+        add("frame_leg", "EASEL LEG", legW, legH, spacing * 2 + w, row2, legPts)
+        return panels
     }
 
     /**
@@ -386,6 +503,47 @@ object BoxSvgGenerator {
         }
         sb.appendLine("  </g>")
         sb.appendLine("</svg>")
+        return sb.toString()
+    }
+
+    /**
+     * Exports the same cut geometry as an AutoCAD R12 ASCII DXF (millimetres, Y axis flipped to DXF's
+     * bottom-up convention). Uses only LINE entities on layer CUT for maximum compatibility
+     * (LightBurn, RDWorks, LaserGRBL, Inkscape, AutoCAD).
+     */
+    fun exportBoxDxf(config: BoxGeneratorConfig, layout: BoxLayoutSummary): String {
+        val sb = StringBuilder()
+        fun pair(code: Int, value: String) { sb.append(code).append('\n').append(value).append('\n') }
+        fun num(v: Float) = String.format(Locale.US, "%.4f", v)
+        val sheetH = layout.totalSheetHeightMm
+        pair(999, "LaserForge Studio ${config.enclosureStyle.name} ${config.widthMm.toInt()}x${config.heightMm.toInt()}x${config.depthMm.toInt()}mm t=${config.thicknessMm}")
+        pair(0, "SECTION"); pair(2, "HEADER")
+        pair(9, "\$ACADVER"); pair(1, "AC1009")
+        pair(9, "\$INSUNITS"); pair(70, "4")
+        pair(9, "\$EXTMIN"); pair(10, "0.0"); pair(20, "0.0")
+        pair(9, "\$EXTMAX"); pair(10, num(layout.totalSheetWidthMm)); pair(20, num(sheetH))
+        pair(0, "ENDSEC")
+        pair(0, "SECTION"); pair(2, "TABLES")
+        pair(0, "TABLE"); pair(2, "LAYER"); pair(70, "1")
+        pair(0, "LAYER"); pair(2, "CUT"); pair(70, "0"); pair(62, "1"); pair(6, "CONTINUOUS")
+        pair(0, "ENDTAB")
+        pair(0, "ENDSEC")
+        pair(0, "SECTION"); pair(2, "ENTITIES")
+        for (panel in layout.panels) {
+            val pts = panel.outlinePointsMm
+            for (i in 1 until pts.size) {
+                val x0 = panel.offsetXMm + pts[i - 1].first
+                val y0 = sheetH - (panel.offsetYMm + pts[i - 1].second)
+                val x1 = panel.offsetXMm + pts[i].first
+                val y1 = sheetH - (panel.offsetYMm + pts[i].second)
+                if (kotlin.math.abs(x0 - x1) < 1e-4f && kotlin.math.abs(y0 - y1) < 1e-4f) continue
+                pair(0, "LINE"); pair(8, "CUT")
+                pair(10, num(x0)); pair(20, num(y0)); pair(30, "0.0")
+                pair(11, num(x1)); pair(21, num(y1)); pair(31, "0.0")
+            }
+        }
+        pair(0, "ENDSEC")
+        pair(0, "EOF")
         return sb.toString()
     }
 }

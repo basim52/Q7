@@ -53,6 +53,15 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import android.widget.Toast
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material3.IconButton
+import com.example.export.FileSharing
+import com.example.export.QuoteDocumentRenderer
+import com.example.model.AppCurrency
+import com.example.model.LaserType
 import com.example.model.CostCalculationResult
 import com.example.model.CostCalculatorConfig
 import com.example.model.DEFAULT_MATERIAL_PRESETS
@@ -74,6 +83,10 @@ fun CostCalculatorScreen(
     config: CostCalculatorConfig,
     result: CostCalculationResult,
     savedQuotes: List<SavedWorkshopQuote>,
+    currency: AppCurrency,
+    workshopName: String,
+    currentQuote: () -> SavedWorkshopQuote,
+    onDeleteQuote: (String) -> Unit,
     onUpdateConfig: ((CostCalculatorConfig) -> CostCalculatorConfig) -> Unit,
     onApplyMaterialPreset: (MaterialPreset) -> Unit,
     onSyncFromVector: () -> Unit,
@@ -161,7 +174,7 @@ fun CostCalculatorScreen(
                                 selected = kotlin.math.abs(config.materialCostPerSheet - preset.defaultSheetCost) < 0.1f,
                                 onClick = { onApplyMaterialPreset(preset) },
                                 label = {
-                                    Text("${preset.name(isArabic)} ($${String.format(Locale.US, "%.2f", preset.defaultSheetCost)})")
+                                    Text("${preset.name(isArabic)} (${currency.format(preset.defaultSheetCost, isArabic)})")
                                 },
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -182,6 +195,8 @@ fun CostCalculatorScreen(
                     CostInputsCard(
                         isArabic = isArabic,
                         config = config,
+                        currency = currency,
+                        result = result,
                         onUpdateConfig = onUpdateConfig,
                         modifier = Modifier.weight(1.05f)
                     )
@@ -190,6 +205,10 @@ fun CostCalculatorScreen(
                         config = config,
                         result = result,
                         savedQuotes = savedQuotes,
+                        currency = currency,
+                        workshopName = workshopName,
+                        currentQuote = currentQuote,
+                        onDeleteQuote = onDeleteQuote,
                         onSaveQuote = onSaveQuote,
                         modifier = Modifier.weight(1f)
                     )
@@ -200,12 +219,18 @@ fun CostCalculatorScreen(
                     config = config,
                     result = result,
                     savedQuotes = savedQuotes,
+                    currency = currency,
+                    workshopName = workshopName,
+                    currentQuote = currentQuote,
+                    onDeleteQuote = onDeleteQuote,
                     onSaveQuote = onSaveQuote,
                     modifier = Modifier.fillMaxWidth()
                 )
                 CostInputsCard(
                     isArabic = isArabic,
                     config = config,
+                    currency = currency,
+                    result = result,
                     onUpdateConfig = onUpdateConfig,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -218,6 +243,8 @@ fun CostCalculatorScreen(
 private fun CostInputsCard(
     isArabic: Boolean,
     config: CostCalculatorConfig,
+    currency: AppCurrency,
+    result: CostCalculationResult,
     onUpdateConfig: ((CostCalculatorConfig) -> CostCalculatorConfig) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -265,7 +292,7 @@ private fun CostInputsCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 NumericField(
-                    label = if (isArabic) "سعر اللوح ($)" else "Sheet Cost ($)",
+                    label = if (isArabic) "سعر اللوح (${currency.symbol(isArabic)})" else "Sheet Cost (${currency.symbol(isArabic)})",
                     value = config.materialCostPerSheet,
                     onValueChange = { v -> onUpdateConfig { it.copy(materialCostPerSheet = v) } },
                     modifier = Modifier.weight(1f),
@@ -328,20 +355,86 @@ private fun CostInputsCard(
                     testTag = "input_cutting_speed"
                 )
                 NumericField(
-                    label = if (isArabic) "ساعة الماكينة ($)" else "Shop Rate ($/hr)",
+                    label = if (isArabic) "ساعة الماكينة (${currency.symbol(isArabic)})" else "Shop Rate (${currency.symbol(isArabic)}/hr)",
                     value = config.hourlyMachineRate,
                     onValueChange = { v -> onUpdateConfig { it.copy(hourlyMachineRate = v) } },
                     modifier = Modifier.weight(1f),
                     testTag = "input_hourly_rate"
                 )
                 NumericField(
-                    label = if (isArabic) "رسوم التجهيز ($)" else "Setup Fee ($)",
+                    label = if (isArabic) "رسوم التجهيز (${currency.symbol(isArabic)})" else "Setup Fee (${currency.symbol(isArabic)})",
                     value = config.setupAndHandlingFee,
                     onValueChange = { v -> onUpdateConfig { it.copy(setupAndHandlingFee = v) } },
                     modifier = Modifier.weight(1f),
                     testTag = "input_setup_fee"
                 )
             }
+
+            HorizontalDivider()
+
+            // Machine profile: laser type + power (scales the material's reference speed)
+            Text(
+                text = if (isArabic) "ملف الماكينة (نوع الليزر والقدرة)" else "MACHINE PROFILE (LASER TYPE & POWER)",
+                style = MaterialTheme.typography.labelLarge
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                LaserType.entries.forEach { type ->
+                    FilterChip(
+                        selected = config.laserType == type,
+                        onClick = {
+                            onUpdateConfig {
+                                it.copy(
+                                    laserType = type,
+                                    laserPowerW = type.defaultPowerW,
+                                    machineWatts = type.defaultMachineWatts
+                                )
+                            }
+                        },
+                        label = { Text(type.label(isArabic)) },
+                        modifier = Modifier.testTag("laser_type_${type.name.lowercase(Locale.US)}")
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                NumericField(
+                    label = if (isArabic) "قدرة الليزر (واط)" else "Laser Power (W)",
+                    value = config.laserPowerW,
+                    onValueChange = { v -> onUpdateConfig { it.copy(laserPowerW = v) } },
+                    modifier = Modifier.weight(1f),
+                    testTag = "input_laser_power"
+                )
+                NumericField(
+                    label = if (isArabic) "استهلاك الماكينة (واط)" else "Machine Draw (W)",
+                    value = config.machineWatts,
+                    onValueChange = { v -> onUpdateConfig { it.copy(machineWatts = v) } },
+                    modifier = Modifier.weight(1f),
+                    testTag = "input_machine_watts"
+                )
+                NumericField(
+                    label = if (isArabic) "سعر الكيلوواط (${currency.symbol(isArabic)})" else "kWh Price (${currency.symbol(isArabic)})",
+                    value = config.kwhPrice,
+                    onValueChange = { v -> onUpdateConfig { it.copy(kwhPrice = v) } },
+                    modifier = Modifier.weight(1f),
+                    testTag = "input_kwh_price"
+                )
+            }
+            Text(
+                text = if (isArabic) {
+                    "السرعة الفعلية المقدّرة: ${result.effectiveSpeedMmPerSec.roundToInt()} مم/ث (السرعة المرجعية للخامة على CO2 بقدرة 60 واط) • الكهرباء: ${currency.format(result.electricityCostPerItem, true)} للقطعة"
+                } else {
+                    "Estimated effective speed: ${result.effectiveSpeedMmPerSec.roundToInt()} mm/s (material reference = 60W CO2) • Electricity: ${currency.format(result.electricityCostPerItem, false)}/unit"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
             HorizontalDivider()
 
@@ -464,10 +557,33 @@ private fun CostOutputDashboardCard(
     config: CostCalculatorConfig,
     result: CostCalculationResult,
     savedQuotes: List<SavedWorkshopQuote>,
+    currency: AppCurrency,
+    workshopName: String,
+    currentQuote: () -> SavedWorkshopQuote,
+    onDeleteQuote: (String) -> Unit,
     onSaveQuote: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    fun m(v: Float, signed: Boolean = false) = currency.format(v, isArabic, signed)
+    fun exportQuote(q: SavedWorkshopQuote, pdf: Boolean) {
+        runCatching {
+            val base = QuoteDocumentRenderer.safeFileBase(q)
+            if (pdf) {
+                FileSharing.shareBytes(
+                    context, "$base.pdf", QuoteDocumentRenderer.renderPdf(q, workshopName, isArabic),
+                    "application/pdf", if (isArabic) "مشاركة عرض السعر PDF" else "Share quote PDF"
+                )
+            } else {
+                FileSharing.shareBytes(
+                    context, "$base.png", QuoteDocumentRenderer.renderPng(q, workshopName, isArabic),
+                    "image/png", if (isArabic) "مشاركة عرض السعر كصورة" else "Share quote image"
+                )
+            }
+        }.onFailure {
+            Toast.makeText(context, (if (isArabic) "تعذر التصدير: " else "Export failed: ") + it.message, Toast.LENGTH_LONG).show()
+        }
+    }
 
     Card(
         modifier = modifier,
@@ -504,7 +620,7 @@ private fun CostOutputDashboardCard(
                                 color = EmeraldSuccess
                             )
                             Text(
-                                text = String.format(Locale.US, "$%.2f", result.recommendedRetailPrice),
+                                text = m(result.recommendedRetailPrice),
                                 style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Bold),
                                 color = Color.White
                             )
@@ -519,7 +635,7 @@ private fun CostOutputDashboardCard(
                                 horizontalAlignment = Alignment.End
                             ) {
                                 Text(
-                                    text = String.format(Locale.US, "+$%.2f", result.profitPerUnit),
+                                    text = m(result.profitPerUnit, signed = true),
                                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                     color = EmeraldSuccess
                                 )
@@ -540,25 +656,25 @@ private fun CostOutputDashboardCard(
                     ) {
                         OutputMetricBox(
                             title = if (isArabic) "تكلفة الخامة" else "MATERIAL COST",
-                            amount = String.format(Locale.US, "$%.2f", result.materialCostPerItem),
+                            amount = m(result.materialCostPerItem),
                             subtitle = if (isArabic) "${result.itemsPerSheet} قطع / لوح" else "${result.itemsPerSheet} pcs / sheet",
                             accent = LaserCyan400,
                             modifier = Modifier.weight(1f)
                         )
                         OutputMetricBox(
                             title = if (isArabic) "تكلفة التشغيل" else "MACHINE COST",
-                            amount = String.format(Locale.US, "$%.2f", result.machineCostPerItem),
+                            amount = m(result.machineCostPerItem + result.electricityCostPerItem),
                             subtitle = formatSeconds(result.cutTimeSecondsPerItem.roundToInt(), isArabic),
                             accent = SparkOrange500,
                             modifier = Modifier.weight(1f)
                         )
                         OutputMetricBox(
                             title = if (isArabic) "إجمالي التكلفة" else "UNIT COGS",
-                            amount = String.format(Locale.US, "$%.2f", result.totalUnitProductionCost),
+                            amount = m(result.totalUnitProductionCost),
                             subtitle = if (isArabic) {
-                                "جملة $${String.format(Locale.US, "%.2f", result.wholesaleUnitPrice)}"
+                                "جملة ${m(result.wholesaleUnitPrice)}"
                             } else {
-                                "Wholesale $${String.format(Locale.US, "%.2f", result.wholesaleUnitPrice)}"
+                                "Wholesale ${m(result.wholesaleUnitPrice)}"
                             },
                             accent = EngraveBlue,
                             modifier = Modifier.weight(1f)
@@ -571,7 +687,7 @@ private fun CostOutputDashboardCard(
             Column {
                 val totalRetail = max(0.01f, result.recommendedRetailPrice)
                 val matFrac = (result.materialCostPerItem / totalRetail).coerceIn(0.04f, 1f)
-                val machFrac = (result.machineCostPerItem / totalRetail).coerceIn(0.04f, 1f)
+                val machFrac = ((result.machineCostPerItem + result.electricityCostPerItem) / totalRetail).coerceIn(0.04f, 1f)
                 val setupFrac = (result.setupCostPerItem / totalRetail).coerceIn(0.03f, 1f)
                 val profFrac = (result.profitPerUnit / totalRetail).coerceIn(0.05f, 1f)
 
@@ -651,18 +767,18 @@ private fun CostOutputDashboardCard(
                         )
                         Text(
                             text = if (isArabic) {
-                                "إجمالي المبيعات: $${String.format(Locale.US, "%.2f", result.totalBatchRevenue)}"
+                                "إجمالي المبيعات: ${m(result.totalBatchRevenue)}"
                             } else {
-                                "Total Revenue: $${String.format(Locale.US, "%.2f", result.totalBatchRevenue)}"
+                                "Total Revenue: ${m(result.totalBatchRevenue)}"
                             },
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                         )
                     }
                     Text(
                         text = if (isArabic) {
-                            "صافي الربح: +$${String.format(Locale.US, "%.2f", result.totalBatchProfit)}"
+                            "صافي الربح: ${m(result.totalBatchProfit, signed = true)}"
                         } else {
-                            "Net Profit: +$${String.format(Locale.US, "%.2f", result.totalBatchProfit)}"
+                            "Net Profit: ${m(result.totalBatchProfit, signed = true)}"
                         },
                         style = MaterialTheme.typography.labelLarge,
                         color = EmeraldSuccess
@@ -693,25 +809,24 @@ private fun CostOutputDashboardCard(
 
                 OutlinedButton(
                     onClick = {
+                        val shopName = workshopName.ifBlank { if (isArabic) "ورشة الليزر" else "Laser Workshop" }
                         val quoteSummary = if (isArabic) {
                             buildString {
-                                appendLine("عرض سعر رسمي — استوديو ليزر فورج")
+                                appendLine("عرض سعر — $shopName")
                                 appendLine("المشروع: ${config.projectName}")
                                 appendLine("مقاس القطعة: ${config.itemWidthMm.toInt()}×${config.itemLengthMm.toInt()} مم")
-                                appendLine("طول القص: ${config.cutLengthMeters} م بسرعة ${config.cuttingSpeedMmPerSec.toInt()} مم/ث")
-                                appendLine("تكلفة الخامة: $${String.format(Locale.US, "%.2f", result.materialCostPerItem)} للقطعة")
-                                appendLine("تكلفة تشغيل الليزر: $${String.format(Locale.US, "%.2f", result.machineCostPerItem)} للقطعة")
-                                appendLine("سعر البيع المقترح: $${String.format(Locale.US, "%.2f", result.recommendedRetailPrice)} للقطعة")
+                                appendLine("الكمية: ${config.batchQuantity} قطعة")
+                                appendLine("سعر القطعة: ${m(result.recommendedRetailPrice)}")
+                                appendLine("الإجمالي: ${m(result.totalBatchRevenue)}")
                             }
                         } else {
                             buildString {
-                                appendLine("LASERFORGE WORKSHOP ESTIMATE")
+                                appendLine("QUOTE — $shopName")
                                 appendLine("Project: ${config.projectName}")
-                                appendLine("Part Footprint: ${config.itemWidthMm.toInt()}×${config.itemLengthMm.toInt()}mm")
-                                appendLine("Cut Length: ${config.cutLengthMeters}m @ ${config.cuttingSpeedMmPerSec.toInt()}mm/s")
-                                appendLine("Material Cost: $${String.format(Locale.US, "%.2f", result.materialCostPerItem)}/unit")
-                                appendLine("Machine Cost: $${String.format(Locale.US, "%.2f", result.machineCostPerItem)}/unit")
-                                appendLine("Recommended Retail Price: $${String.format(Locale.US, "%.2f", result.recommendedRetailPrice)}/unit")
+                                appendLine("Part size: ${config.itemWidthMm.toInt()}×${config.itemLengthMm.toInt()}mm")
+                                appendLine("Quantity: ${config.batchQuantity}")
+                                appendLine("Unit price: ${m(result.recommendedRetailPrice)}")
+                                appendLine("Total: ${m(result.totalBatchRevenue)}")
                             }
                         }
                         val sendIntent = Intent(Intent.ACTION_SEND).apply {
@@ -733,7 +848,36 @@ private fun CostOutputDashboardCard(
                 ) {
                     Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(if (isArabic) "مشاركة التسعيرة" else "Share Quote")
+                    Text(if (isArabic) "مشاركة نصية" else "Share Text")
+                }
+            }
+
+            // PDF / PNG export of the current quote (share sheet → WhatsApp, email, ...)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { exportQuote(currentQuote(), pdf = true) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .testTag("export_quote_pdf_button")
+                ) {
+                    Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(if (isArabic) "عرض سعر PDF" else "Quote PDF")
+                }
+                OutlinedButton(
+                    onClick = { exportQuote(currentQuote(), pdf = false) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .testTag("export_quote_png_button")
+                ) {
+                    Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(if (isArabic) "عرض سعر صورة" else "Quote Image")
                 }
             }
 
@@ -758,7 +902,7 @@ private fun CostOutputDashboardCard(
                     )
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    savedQuotes.take(4).forEach { quote ->
+                    savedQuotes.forEach { quote ->
                         Surface(
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
                             shape = RoundedCornerShape(10.dp),
@@ -783,11 +927,24 @@ private fun CostOutputDashboardCard(
                                     )
                                 }
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = String.format(Locale.US, "$%.2f", quote.retailPrice),
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = EmeraldSuccess
-                                )
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        text = quote.currency.format(quote.retailPrice, isArabic),
+                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = EmeraldSuccess
+                                    )
+                                    Row {
+                                        IconButton(onClick = { exportQuote(quote, pdf = true) }, modifier = Modifier.size(34.dp)) {
+                                            Icon(Icons.Default.PictureAsPdf, contentDescription = if (isArabic) "تصدير PDF" else "Export PDF", modifier = Modifier.size(18.dp))
+                                        }
+                                        IconButton(onClick = { exportQuote(quote, pdf = false) }, modifier = Modifier.size(34.dp)) {
+                                            Icon(Icons.Default.Image, contentDescription = if (isArabic) "تصدير صورة" else "Export image", modifier = Modifier.size(18.dp))
+                                        }
+                                        IconButton(onClick = { onDeleteQuote(quote.id) }, modifier = Modifier.size(34.dp)) {
+                                            Icon(Icons.Default.Delete, contentDescription = if (isArabic) "حذف" else "Delete", modifier = Modifier.size(18.dp))
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

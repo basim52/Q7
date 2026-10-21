@@ -1,7 +1,11 @@
 package com.example.viewmodel
 
 import android.graphics.Bitmap
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import com.example.data.LocalStore
+import com.example.model.AppCurrency
+import com.example.model.EnclosureStyle
 import androidx.lifecycle.viewModelScope
 import com.example.engine.BoxSvgGenerator
 import com.example.engine.SvgVectorEngine
@@ -16,7 +20,6 @@ import com.example.model.SavedWorkshopQuote
 import com.example.model.StudioTool
 import com.example.model.VectorOptimizerConfig
 import com.example.model.VectorPreviewResult
-import com.example.model.WorkshopProfile
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -37,9 +40,8 @@ data class LaserForgeUiState(
     val activeTool: StudioTool = StudioTool.VECTOR_OPTIMIZER,
     val isDarkTheme: Boolean = true,
     val isArabic: Boolean = true,
-    val creditsRemaining: Int = 15,
-    val currentProfile: WorkshopProfile = AVAILABLE_PROFILES.first(),
-    val availableProfiles: List<WorkshopProfile> = AVAILABLE_PROFILES,
+    val workshopName: String = "",
+    val currency: AppCurrency = AppCurrency.SAR,
     val statusBannerMessage: String? = null,
 
     // Tool 1: Vector & Image Optimizer
@@ -58,74 +60,11 @@ data class LaserForgeUiState(
     // Tool 3: Workshop Cost & Pricing Calculator
     val costConfig: CostCalculatorConfig = CostCalculatorConfig(),
     val costResult: CostCalculationResult = calculateWorkshopPricing(CostCalculatorConfig()),
-    val savedQuotes: List<SavedWorkshopQuote> = INITIAL_SAVED_QUOTES,
+    val savedQuotes: List<SavedWorkshopQuote> = emptyList(),
 
     // Export Modal & History
     val exportHistory: List<ExportHistoryItem> = emptyList(),
     val activeExportModalItem: ExportHistoryItem? = null
-)
-
-val AVAILABLE_PROFILES = listOf(
-    WorkshopProfile(
-        id = "pro_operator",
-        nameEn = "Alex Rivera",
-        nameAr = "م. باسم العتيبي",
-        roleEn = "Lead CNC & Laser Operator",
-        roleAr = "مهندس تشغيل ليزر و CNC رئيسي",
-        workshopNameEn = "Apex FabWorks Studio",
-        workshopNameAr = "استوديو ليزر فورج للتصنيع الرقمي",
-        planTierEn = "Pro Workshop Tier",
-        planTierAr = "باقة الورش الاحترافية Pro",
-        avatarInitials = "ب ع",
-        isSignedIn = true
-    ),
-    WorkshopProfile(
-        id = "maker_lead",
-        nameEn = "Maya Lin",
-        nameAr = "م. سارة المنصور",
-        roleEn = "Industrial Enclosure Designer",
-        roleAr = "مصممة صناديق ومنتجات ليزر",
-        workshopNameEn = "Kinetix Laser Lab",
-        workshopNameAr = "مختبر كينتكس للقص بالليزر",
-        planTierEn = "Studio Team Tier",
-        planTierAr = "باقة فرق العمل Studio",
-        avatarInitials = "س م",
-        isSignedIn = true
-    ),
-    WorkshopProfile(
-        id = "guest_mode",
-        nameEn = "Guest Operator",
-        nameAr = "زائر (وضع المعاينة)",
-        roleEn = "Unauthenticated Session",
-        roleAr = "جلسة بدون تسجيل دخول",
-        workshopNameEn = "Local Bench Mode",
-        workshopNameAr = "وضع التجربة المحلي",
-        planTierEn = "Sign In Required for Export",
-        planTierAr = "يتطلب تسجيل الدخول لتصدير SVG",
-        avatarInitials = "ز",
-        isSignedIn = false
-    )
-)
-
-val INITIAL_SAVED_QUOTES = listOf(
-    SavedWorkshopQuote(
-        id = "q1",
-        projectName = "صندوق راسبيري باي (خشب بتولا 3 مم) / Raspberry Pi Enclosure",
-        retailPrice = 24.80f,
-        unitCost = 11.16f,
-        marginPercent = 55,
-        summaryTextEn = "Sheet: 600×400mm ($19.00) • Cut: 3.85m @ 28mm/s • Retail: $24.80/unit",
-        summaryTextAr = "اللوح: 600×400 مم (19.00$) • القص: 3.85 م بسرعة 28 مم/ث • سعر البيع: 24.80$ للقطعة"
-    ),
-    SavedWorkshopQuote(
-        id = "q2",
-        projectName = "طقم قواعد أكواب ماندالا (خشب جوز) / Mandala Coaster Set",
-        retailPrice = 34.50f,
-        unitCost = 14.49f,
-        marginPercent = 58,
-        summaryTextEn = "Sheet: 600×400mm ($42.00) • Cut: 6.20m @ 18mm/s • Retail: $34.50/set",
-        summaryTextAr = "اللوح: 600×400 مم (42.00$) • القص: 6.20 م بسرعة 18 مم/ث • سعر البيع: 34.50$ للطقم"
-    )
 )
 
 fun calculateWorkshopPricing(config: CostCalculatorConfig): CostCalculationResult {
@@ -143,13 +82,15 @@ fun calculateWorkshopPricing(config: CostCalculatorConfig): CostCalculationResul
     val materialCostPerItem = rawAreaCost * wasteMultiplier
 
     val cutLengthMm = max(10f, config.cutLengthMeters * 1000f)
-    val speed = max(1f, config.cuttingSpeedMmPerSec)
+    // Material reference speed is tuned for a 60W CO2 laser; scale it by the machine profile.
+    val speed = max(0.5f, config.cuttingSpeedMmPerSec * config.laserType.speedMultiplier(config.laserPowerW))
     val cutTimeSeconds = (cutLengthMm / speed) * 1.15f
     val machineCostPerSecond = config.hourlyMachineRate / 3600f
     val machineCostPerItem = cutTimeSeconds * machineCostPerSecond
+    val electricityCostPerItem = (cutTimeSeconds / 3600f) * (max(0f, config.machineWatts) / 1000f) * max(0f, config.kwhPrice)
 
     val setupPerUnit = config.setupAndHandlingFee / max(1, config.batchQuantity).toFloat()
-    val totalUnitProductionCost = materialCostPerItem + machineCostPerItem + setupPerUnit
+    val totalUnitProductionCost = materialCostPerItem + machineCostPerItem + electricityCostPerItem + setupPerUnit
 
     val marginFraction = (config.profitMarginPercent.coerceIn(5f, 90f)) / 100f
     val recommendedRetailPrice = totalUnitProductionCost / (1f - marginFraction)
@@ -164,6 +105,8 @@ fun calculateWorkshopPricing(config: CostCalculatorConfig): CostCalculationResul
         materialCostPerItem = materialCostPerItem,
         cutTimeSecondsPerItem = cutTimeSeconds,
         machineCostPerItem = machineCostPerItem,
+        electricityCostPerItem = electricityCostPerItem,
+        effectiveSpeedMmPerSec = speed,
         setupCostPerItem = setupPerUnit,
         totalUnitProductionCost = totalUnitProductionCost,
         wholesaleUnitPrice = wholesaleUnitPrice,
@@ -174,13 +117,79 @@ fun calculateWorkshopPricing(config: CostCalculatorConfig): CostCalculationResul
     )
 }
 
-class LaserForgeViewModel : ViewModel() {
+class LaserForgeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(LaserForgeUiState())
     val uiState: StateFlow<LaserForgeUiState> = _uiState.asStateFlow()
+    private val store = LocalStore(application)
 
     init {
         refreshVectorPreview()
+        viewModelScope.launch {
+            val saved = runCatching { store.load() }.getOrNull() ?: return@launch
+            _uiState.update {
+                it.copy(
+                    workshopName = saved.workshopName,
+                    currency = saved.currency,
+                    savedQuotes = saved.savedQuotes,
+                    exportHistory = saved.exportHistory
+                )
+            }
+        }
+    }
+
+    private fun money(amount: Float, signed: Boolean = false): String {
+        val st = _uiState.value
+        return st.currency.format(amount, st.isArabic, signed)
+    }
+
+    // --- WORKSHOP SETTINGS (stored on device) ---
+
+    fun setWorkshopName(name: String) {
+        val trimmed = name.take(60)
+        _uiState.update { it.copy(workshopName = trimmed) }
+        viewModelScope.launch { store.saveWorkshopName(trimmed) }
+    }
+
+    fun setCurrency(currency: AppCurrency) {
+        _uiState.update {
+            it.copy(
+                currency = currency,
+                statusBannerMessage = if (it.isArabic) {
+                    "تم تغيير العملة إلى ${currency.nameAr} (${currency.symbolAr})"
+                } else {
+                    "Currency changed to ${currency.nameEn} (${currency.code})"
+                }
+            )
+        }
+        viewModelScope.launch { store.saveCurrency(currency) }
+    }
+
+    fun deleteQuote(id: String) {
+        _uiState.update { it.copy(savedQuotes = it.savedQuotes.filterNot { q -> q.id == id }) }
+        persistQuotes()
+    }
+
+    fun clearExportHistory() {
+        _uiState.update { it.copy(exportHistory = emptyList()) }
+        persistHistory()
+    }
+
+    private fun persistQuotes() {
+        val quotes = _uiState.value.savedQuotes
+        viewModelScope.launch { store.saveQuotes(quotes) }
+    }
+
+    private fun persistHistory() {
+        val items = _uiState.value.exportHistory
+        viewModelScope.launch { store.saveHistory(items) }
+    }
+
+    private fun addExport(item: ExportHistoryItem) {
+        _uiState.update {
+            it.copy(exportHistory = (listOf(item) + it.exportHistory).take(LocalStore.MAX_HISTORY))
+        }
+        persistHistory()
     }
 
     fun selectTool(tool: StudioTool) {
@@ -206,42 +215,6 @@ class LaserForgeViewModel : ViewModel() {
                     "تم التبديل إلى اللغة العربية (واجهة من اليمين إلى اليسار)"
                 } else {
                     "Switched language to English (LTR interface)"
-                }
-            )
-        }
-    }
-
-    fun selectProfile(profile: WorkshopProfile) {
-        _uiState.update { state ->
-            val ar = state.isArabic
-            state.copy(
-                currentProfile = profile,
-                statusBannerMessage = if (profile.isSignedIn) {
-                    if (ar) {
-                        "تم تبديل المشغل إلى ${profile.nameAr} (${profile.workshopNameAr})"
-                    } else {
-                        "Switched operator to ${profile.nameEn} (${profile.workshopNameEn})"
-                    }
-                } else {
-                    if (ar) {
-                        "تم التبديل إلى وضع الزائر — يرجى تسجيل الدخول لتصدير ملفات SVG"
-                    } else {
-                        "Switched to Guest Mode — Sign in to export production SVGs"
-                    }
-                }
-            )
-        }
-    }
-
-    fun topUpCredits(amount: Int = 10) {
-        _uiState.update { state ->
-            val next = state.creditsRemaining + amount
-            state.copy(
-                creditsRemaining = next,
-                statusBannerMessage = if (state.isArabic) {
-                    "تم شحن +$amount رصيد بنجاح! (الرصيد المتبقي: $next)"
-                } else {
-                    "+$amount Workshop Credits added! ($next Credits Remaining)"
                 }
             )
         }
@@ -313,30 +286,6 @@ class LaserForgeViewModel : ViewModel() {
     fun generateAndExportVectorSvg() {
         val state = _uiState.value
         val ar = state.isArabic
-        if (!state.currentProfile.isSignedIn) {
-            _uiState.update {
-                it.copy(
-                    statusBannerMessage = if (ar) {
-                        "يلزم تسجيل الدخول: اختر حساب مشغل فعال من القائمة العلوية لتصدير ملفات SVG."
-                    } else {
-                        "Authentication required: Select an active Workshop Operator profile in the header to export SVGs."
-                    }
-                )
-            }
-            return
-        }
-        if (state.creditsRemaining <= 0) {
-            _uiState.update {
-                it.copy(
-                    statusBannerMessage = if (ar) {
-                        "رصيدك 0! اضغط على شارة الرصيد في الأعلى لشحن +10 رصيد مجاني."
-                    } else {
-                        "0 Credits Remaining! Tap the Credits badge in the top bar to top up +10 credits."
-                    }
-                )
-            }
-            return
-        }
         val preview = state.vectorPreview ?: return
 
         viewModelScope.launch {
@@ -354,7 +303,7 @@ class LaserForgeViewModel : ViewModel() {
                 .replace(Regex("[^a-z0-9]+"), "_")
                 .trim('_')
                 .ifEmpty { "laser_vector" }
-            val timestamp = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
+            val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date())
             val exportItem = ExportHistoryItem(
                 id = UUID.randomUUID().toString(),
                 title = "${state.artworkTitle} (${state.vectorConfig.softwarePreset.label(ar)})",
@@ -362,20 +311,17 @@ class LaserForgeViewModel : ViewModel() {
                 toolNameAr = "محول الفيكتور",
                 fileName = "${safeName}_cut.svg",
                 timestampLabel = timestamp,
-                svgContent = svgContent,
-                creditsUsed = 1
+                svgContent = svgContent
             )
+            addExport(exportItem)
             _uiState.update { curr ->
-                val remaining = (curr.creditsRemaining - 1).coerceAtLeast(0)
                 curr.copy(
                     isGeneratingVector = false,
-                    creditsRemaining = remaining,
-                    exportHistory = listOf(exportItem) + curr.exportHistory,
                     activeExportModalItem = exportItem,
                     statusBannerMessage = if (curr.isArabic) {
-                        "تم توليد ملف SVG بنجاح (${preview.closedLoopCount} مسار مغلق) • خُصم 1 رصيد (المتبقي $remaining)"
+                        "تم توليد ملف SVG بنجاح (${preview.closedLoopCount} مسار مغلق)"
                     } else {
-                        "Generated clean SVG (${preview.closedLoopCount} closed paths) • 1 Credit deducted ($remaining left)"
+                        "Generated clean SVG (${preview.closedLoopCount} closed paths)"
                     }
                 )
             }
@@ -409,62 +355,42 @@ class LaserForgeViewModel : ViewModel() {
     fun exportBoxLayoutSvg() {
         val state = _uiState.value
         val ar = state.isArabic
-        if (!state.currentProfile.isSignedIn) {
-            _uiState.update {
-                it.copy(
-                    statusBannerMessage = if (ar) {
-                        "يلزم تسجيل الدخول: اختر حساب مشغل من القائمة العلوية لتصدير ملف SVG."
-                    } else {
-                        "Authentication required: Switch to an authenticated Operator profile in the header to export SVGs."
-                    }
-                )
-            }
-            return
-        }
-        if (state.creditsRemaining <= 0) {
-            _uiState.update {
-                it.copy(
-                    statusBannerMessage = if (ar) {
-                        "رصيدك 0! اضغط على شارة الرصيد في الأعلى لشحن +10 رصيد."
-                    } else {
-                        "0 Credits Remaining! Tap the Credits badge in the header to top up credits."
-                    }
-                )
-            }
-            return
-        }
 
         viewModelScope.launch {
             _uiState.update { it.copy(isExportingBox = true, statusBannerMessage = null) }
             delay(450)
             val cfg = state.boxConfig
             val layout = state.boxLayout
-            val svgContent = withContext(Dispatchers.Default) {
-                BoxSvgGenerator.exportBoxSvg(cfg, layout)
+            val (svgContent, dxfContent) = withContext(Dispatchers.Default) {
+                BoxSvgGenerator.exportBoxSvg(cfg, layout) to BoxSvgGenerator.exportBoxDxf(cfg, layout)
+            }
+            val prefix = when (cfg.enclosureStyle) {
+                EnclosureStyle.DRAWER -> "drawer"
+                EnclosureStyle.PHONE_STAND -> "phone_stand"
+                EnclosureStyle.PICTURE_FRAME -> "frame"
+                else -> "box"
             }
             val dims = "${cfg.widthMm.toInt()}x${cfg.heightMm.toInt()}x${cfg.depthMm.toInt()}mm"
-            val timestamp = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
+            val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date())
             val exportItem = ExportHistoryItem(
                 id = UUID.randomUUID().toString(),
-                title = "Box $dims (${cfg.thicknessMm}mm)",
+                title = "${cfg.enclosureStyle.label(ar)} $dims (${cfg.thicknessMm}mm)",
                 toolNameEn = "Box Generator",
                 toolNameAr = "مولد الصناديق",
-                fileName = "box_${dims}_${cfg.thicknessMm}mm.svg",
+                fileName = "${prefix}_${dims}_${cfg.thicknessMm}mm.svg",
                 timestampLabel = timestamp,
                 svgContent = svgContent,
-                creditsUsed = 1
+                dxfContent = dxfContent
             )
+            addExport(exportItem)
             _uiState.update { curr ->
-                val remaining = (curr.creditsRemaining - 1).coerceAtLeast(0)
                 curr.copy(
                     isExportingBox = false,
-                    creditsRemaining = remaining,
-                    exportHistory = listOf(exportItem) + curr.exportHistory,
                     activeExportModalItem = exportItem,
                     statusBannerMessage = if (curr.isArabic) {
-                        "تم تصدير مخطط الصندوق (${layout.panels.size} ألواح - $dims) • خُصم 1 رصيد (المتبقي $remaining)"
+                        "تم تجهيز المخطط (${layout.panels.size} قطع - $dims) بصيغتي SVG و DXF"
                     } else {
-                        "Exported ${layout.panels.size}-panel Box SVG ($dims) • 1 Credit deducted ($remaining left)"
+                        "Prepared ${layout.panels.size}-panel layout ($dims) as SVG + DXF"
                     }
                 )
             }
@@ -496,9 +422,9 @@ class LaserForgeViewModel : ViewModel() {
             val ar = state.isArabic
             state.copy(
                 statusBannerMessage = if (ar) {
-                    "تم اختيار ${preset.nameAr} (${preset.defaultSheetCost}$ للوح بسرعة ${preset.recommendedSpeedMmPerSec.toInt()} مم/ث)"
+                    "تم اختيار ${preset.nameAr} (${money(preset.defaultSheetCost)} للوح بسرعة ${preset.recommendedSpeedMmPerSec.toInt()} مم/ث)"
                 } else {
-                    "Loaded ${preset.nameEn} sheet rates ($${preset.defaultSheetCost}/sheet @ ${preset.recommendedSpeedMmPerSec.toInt()}mm/s)"
+                    "Loaded ${preset.nameEn} sheet rates (${money(preset.defaultSheetCost)}/sheet @ ${preset.recommendedSpeedMmPerSec.toInt()}mm/s)"
                 }
             )
         }
@@ -560,10 +486,30 @@ class LaserForgeViewModel : ViewModel() {
     }
 
     fun saveCurrentQuote() {
+        val quote = currentQuoteSnapshot()
+        val state = _uiState.value
+        val ar = state.isArabic
+        val cur = state.currency
+        _uiState.update {
+            it.copy(
+                savedQuotes = listOf(quote) + it.savedQuotes,
+                statusBannerMessage = if (ar) {
+                    "تم حفظ عرض السعر \"${quote.projectName}\" على الجهاز (سعر البيع: ${cur.format(quote.retailPrice, true)})"
+                } else {
+                    "Saved quote \"${quote.projectName}\" on device (${cur.format(quote.retailPrice, false)} retail)"
+                }
+            )
+        }
+        persistQuotes()
+    }
+
+    /** Builds a quote from the current calculator state without saving it. */
+    fun currentQuoteSnapshot(): SavedWorkshopQuote {
         val state = _uiState.value
         val cfg = state.costConfig
         val res = state.costResult
         val ar = state.isArabic
+        val cur = state.currency
         val quote = SavedWorkshopQuote(
             id = UUID.randomUUID().toString(),
             projectName = cfg.projectName.ifBlank { if (ar) "مشروع قص ليزر مخصص" else "Custom Laser Job" },
@@ -572,34 +518,33 @@ class LaserForgeViewModel : ViewModel() {
             marginPercent = cfg.profitMarginPercent.toInt(),
             summaryTextEn = String.format(
                 Locale.US,
-                "Sheet: %dx%dmm ($%.2f) • Cut: %.2fm @ %dmm/s • Retail: $%.2f/unit",
+                "Sheet: %dx%dmm (%s) • Cut: %.2fm @ %dmm/s • Retail: %s/unit",
                 cfg.sheetWidthMm.toInt(),
                 cfg.sheetLengthMm.toInt(),
-                cfg.materialCostPerSheet,
+                cur.format(cfg.materialCostPerSheet, false),
                 cfg.cutLengthMeters,
-                cfg.cuttingSpeedMmPerSec.toInt(),
-                res.recommendedRetailPrice
+                res.effectiveSpeedMmPerSec.toInt(),
+                cur.format(res.recommendedRetailPrice, false)
             ),
             summaryTextAr = String.format(
                 Locale.US,
-                "اللوح: %dx%d مم ($%.2f) • القص: %.2f م بسرعة %d مم/ث • سعر البيع: $%.2f للقطعة",
+                "اللوح: %dx%d مم (%s) • القص: %.2f م بسرعة %d مم/ث • سعر البيع: %s للقطعة",
                 cfg.sheetWidthMm.toInt(),
                 cfg.sheetLengthMm.toInt(),
-                cfg.materialCostPerSheet,
+                cur.format(cfg.materialCostPerSheet, true),
                 cfg.cutLengthMeters,
-                cfg.cuttingSpeedMmPerSec.toInt(),
-                res.recommendedRetailPrice
-            )
+                res.effectiveSpeedMmPerSec.toInt(),
+                cur.format(res.recommendedRetailPrice, true)
+            ),
+            currencyCode = cur.code,
+            itemWidthMm = cfg.itemWidthMm,
+            itemLengthMm = cfg.itemLengthMm,
+            batchQuantity = cfg.batchQuantity,
+            materialCost = res.materialCostPerItem,
+            machineCost = res.machineCostPerItem,
+            electricityCost = res.electricityCostPerItem,
+            setupCost = res.setupCostPerItem
         )
-        _uiState.update {
-            it.copy(
-                savedQuotes = listOf(quote) + it.savedQuotes,
-                statusBannerMessage = if (ar) {
-                    "تم حفظ عرض السعر \"${quote.projectName}\" (سعر البيع: $${String.format(Locale.US, "%.2f", quote.retailPrice)})"
-                } else {
-                    "Saved quote for \"${quote.projectName}\" ($${String.format(Locale.US, "%.2f", quote.retailPrice)} retail)"
-                }
-            )
-        }
+        return quote
     }
 }

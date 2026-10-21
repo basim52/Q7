@@ -159,7 +159,7 @@ fun BoxGeneratorScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = if (isArabic) "نمط الصندوق والتعشيق:" else "ENCLOSURE TOPOLOGY:",
+                        text = if (isArabic) "القالب / نمط التصميم:" else "TEMPLATE / TOPOLOGY:",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -700,9 +700,9 @@ private fun BoxParametersFormCard(
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
                         if (isArabic) {
-                            "جاري تجهيز مخطط الصندوق بصيغة SVG..."
+                            "جاري تجهيز المخطط بصيغتي SVG و DXF..."
                         } else {
-                            "Generating Multi-Part Finger-Joint SVG..."
+                            "Generating SVG + DXF Layout..."
                         }
                     )
                 } else {
@@ -710,9 +710,9 @@ private fun BoxParametersFormCard(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = if (isArabic) {
-                            "تصدير مخطط الصندوق SVG (${layout.panels.size} أوجه • 1 رصيد)"
+                            "تصدير المخطط SVG + DXF (${layout.panels.size} قطع)"
                         } else {
-                            "Export Multi-Panel SVG (${layout.panels.size} Panels • 1 Credit)"
+                            "Export SVG + DXF (${layout.panels.size} Parts)"
                         },
                         style = MaterialTheme.typography.labelLarge
                     )
