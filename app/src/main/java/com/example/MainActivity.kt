@@ -84,17 +84,17 @@ fun LaserForgeStudioApp(
             contentWindowInsets = WindowInsets.safeDrawing,
             topBar = {
                 StudioTopHeader(
-                    creditsRemaining = uiState.creditsRemaining,
-                    currentProfile = uiState.currentProfile,
-                    availableProfiles = uiState.availableProfiles,
+                    workshopName = uiState.workshopName,
+                    currency = uiState.currency,
                     exportHistory = uiState.exportHistory,
                     isDarkTheme = uiState.isDarkTheme,
                     isArabic = isArabic,
                     onToggleTheme = viewModel::toggleTheme,
                     onToggleLanguage = viewModel::toggleLanguage,
-                    onSelectProfile = viewModel::selectProfile,
-                    onTopUpCredits = { viewModel.topUpCredits(10) },
-                    onOpenExportItem = viewModel::openExportModal
+                    onSetWorkshopName = viewModel::setWorkshopName,
+                    onSetCurrency = viewModel::setCurrency,
+                    onOpenExportItem = viewModel::openExportModal,
+                    onClearHistory = viewModel::clearExportHistory
                 )
             },
             bottomBar = {
@@ -192,6 +192,10 @@ fun LaserForgeStudioApp(
                                     config = uiState.costConfig,
                                     result = uiState.costResult,
                                     savedQuotes = uiState.savedQuotes,
+                                    currency = uiState.currency,
+                                    workshopName = uiState.workshopName,
+                                    currentQuote = viewModel::currentQuoteSnapshot,
+                                    onDeleteQuote = viewModel::deleteQuote,
                                     onUpdateConfig = viewModel::updateCostConfig,
                                     onApplyMaterialPreset = viewModel::applyPricingMaterialPreset,
                                     onSyncFromVector = viewModel::syncCostFromVectorOptimizer,
@@ -209,7 +213,6 @@ fun LaserForgeStudioApp(
     uiState.activeExportModalItem?.let { exportItem ->
         SvgExportModalDialog(
             exportItem = exportItem,
-            creditsRemaining = uiState.creditsRemaining,
             isArabic = isArabic,
             onDismiss = viewModel::dismissExportModal
         )

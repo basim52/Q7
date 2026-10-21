@@ -824,9 +824,9 @@ private fun VectorParametersCard(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = if (isArabic) {
-                            "توليد وتصدير ملف الفيكتور SVG (1 رصيد)"
+                            "توليد وتصدير ملف الفيكتور SVG"
                         } else {
-                            "Generate SVG / Vector (1 Credit)"
+                            "Generate SVG / Vector"
                         },
                         style = MaterialTheme.typography.labelLarge
                     )

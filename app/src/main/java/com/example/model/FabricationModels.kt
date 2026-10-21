@@ -44,23 +44,51 @@ enum class StudioTool(
     fun badge(isArabic: Boolean) = if (isArabic) badgeAr else badgeEn
 }
 
-data class WorkshopProfile(
-    val id: String,
-    val nameEn: String,
-    val nameAr: String,
-    val roleEn: String,
-    val roleAr: String,
-    val workshopNameEn: String,
-    val workshopNameAr: String,
-    val planTierEn: String,
-    val planTierAr: String,
-    val avatarInitials: String,
-    val isSignedIn: Boolean = true
+enum class AppCurrency(val code: String, val symbolAr: String, val symbolEn: String, val nameAr: String, val nameEn: String) {
+    SAR("SAR", "ر.س", "SAR", "ريال سعودي", "Saudi Riyal"),
+    AED("AED", "د.إ", "AED", "درهم إماراتي", "UAE Dirham"),
+    KWD("KWD", "د.ك", "KWD", "دينار كويتي", "Kuwaiti Dinar"),
+    QAR("QAR", "ر.ق", "QAR", "ريال قطري", "Qatari Riyal"),
+    BHD("BHD", "د.ب", "BHD", "دينار بحريني", "Bahraini Dinar"),
+    OMR("OMR", "ر.ع", "OMR", "ريال عماني", "Omani Rial"),
+    EGP("EGP", "ج.م", "EGP", "جنيه مصري", "Egyptian Pound"),
+    USD("USD", "$", "$", "دولار أمريكي", "US Dollar"),
+    EUR("EUR", "€", "€", "يورو", "Euro");
+
+    fun symbol(isArabic: Boolean) = if (isArabic) symbolAr else symbolEn
+    fun displayName(isArabic: Boolean) = if (isArabic) nameAr else nameEn
+
+    /** Formats an amount with this currency, e.g. "24.80 ر.س" or "$24.80". */
+    fun format(amount: Float, isArabic: Boolean, signed: Boolean = false): String {
+        val num = java.lang.String.format(java.util.Locale.US, "%.2f", amount)
+        val sign = if (signed && amount >= 0f) "+" else ""
+        return if (!isArabic && (this == USD || this == EUR)) "$sign$symbolEn$num" else "$sign$num ${symbol(isArabic)}"
+    }
+
+    companion object {
+        fun fromCode(code: String?): AppCurrency = entries.firstOrNull { it.code == code } ?: SAR
+    }
+}
+
+enum class LaserType(
+    val labelEn: String,
+    val labelAr: String,
+    val referencePowerW: Float,
+    val baseSpeedFactor: Float,
+    val defaultPowerW: Float,
+    val defaultMachineWatts: Float
 ) {
-    fun name(isArabic: Boolean) = if (isArabic) nameAr else nameEn
-    fun role(isArabic: Boolean) = if (isArabic) roleAr else roleEn
-    fun workshopName(isArabic: Boolean) = if (isArabic) workshopNameAr else workshopNameEn
-    fun planTier(isArabic: Boolean) = if (isArabic) planTierAr else planTierEn
+    CO2("CO2 Laser", "ليزر CO2", 60f, 1.0f, 60f, 900f),
+    DIODE("Diode Laser", "ليزر ديود", 20f, 0.45f, 20f, 150f),
+    FIBER("Fiber Laser", "ليزر فايبر", 50f, 1.15f, 50f, 600f);
+
+    fun label(isArabic: Boolean) = if (isArabic) labelAr else labelEn
+
+    /** Multiplier applied to the material's reference cutting speed (tuned for a 60W CO2). */
+    fun speedMultiplier(powerW: Float): Float {
+        val p = powerW.coerceIn(1f, 500f)
+        return (baseSpeedFactor * kotlin.math.sqrt(p / referencePowerW)).coerceIn(0.1f, 4f)
+    }
 }
 
 enum class SampleArtworkPreset(
@@ -175,7 +203,10 @@ enum class EnclosureStyle(
 ) {
     CLOSED_SIX_PANEL("Closed 6-Panel Box", "صندوق مغلق (6 أوجه)", 6),
     OPEN_TOP_TRAY("Open-Top Organizer", "صندوق منظم مفتوح من الأعلى (5 أوجه)", 5),
-    DIVIDED_TRAY("Open Tray + Center Divider", "صندوق منظم مع قاطع وسطي (6 قطع)", 6);
+    DIVIDED_TRAY("Open Tray + Center Divider", "صندوق منظم مع قاطع وسطي (6 قطع)", 6),
+    DRAWER("Drawer + Front Face", "درج مع واجهة أمامية (6 قطع)", 6),
+    PHONE_STAND("Phone Stand", "حامل جوال (4 قطع)", 4),
+    PICTURE_FRAME("Picture Frame", "برواز صور (6 قطع)", 6);
 
     fun label(isArabic: Boolean) = if (isArabic) labelAr else labelEn
 }
@@ -244,7 +275,11 @@ data class CostCalculatorConfig(
     val setupAndHandlingFee: Float = 2.50f,
     val wasteFactorPercent: Float = 15f,
     val profitMarginPercent: Float = 55f,
-    val batchQuantity: Int = 10
+    val batchQuantity: Int = 10,
+    val laserType: LaserType = LaserType.CO2,
+    val laserPowerW: Float = 60f,
+    val machineWatts: Float = 900f,
+    val kwhPrice: Float = 0.18f
 )
 
 data class CostCalculationResult(
@@ -254,6 +289,8 @@ data class CostCalculationResult(
     val materialCostPerItem: Float,
     val cutTimeSecondsPerItem: Float,
     val machineCostPerItem: Float,
+    val electricityCostPerItem: Float,
+    val effectiveSpeedMmPerSec: Float,
     val setupCostPerItem: Float,
     val totalUnitProductionCost: Float,
     val wholesaleUnitPrice: Float,
@@ -271,9 +308,10 @@ data class ExportHistoryItem(
     val fileName: String,
     val timestampLabel: String,
     val svgContent: String,
-    val creditsUsed: Int = 1
+    val dxfContent: String? = null
 ) {
     fun toolName(isArabic: Boolean) = if (isArabic) toolNameAr else toolNameEn
+    val dxfFileName: String get() = fileName.removeSuffix(".svg") + ".dxf"
 }
 
 data class SavedWorkshopQuote(
@@ -283,7 +321,17 @@ data class SavedWorkshopQuote(
     val unitCost: Float,
     val marginPercent: Int,
     val summaryTextEn: String,
-    val summaryTextAr: String
+    val summaryTextAr: String,
+    val currencyCode: String = AppCurrency.SAR.code,
+    val createdAtMillis: Long = System.currentTimeMillis(),
+    val itemWidthMm: Float = 0f,
+    val itemLengthMm: Float = 0f,
+    val batchQuantity: Int = 1,
+    val materialCost: Float = 0f,
+    val machineCost: Float = 0f,
+    val electricityCost: Float = 0f,
+    val setupCost: Float = 0f
 ) {
     fun summaryText(isArabic: Boolean) = if (isArabic) summaryTextAr else summaryTextEn
+    val currency: AppCurrency get() = AppCurrency.fromCode(currencyCode)
 }
